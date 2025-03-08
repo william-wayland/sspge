@@ -52,8 +52,7 @@ int main(int argc, char *argv[]) {
         socket.receive(buffer.data(), buffer.size(), received, sender, port);
     if (s == sf::Socket::Status::Done) {
       Version v = Deserialise<Version>({buffer.data(), received});
-      std::cout << sender->toString() << " said: " << v.major << (int)v.id
-                << std::endl;
+      std::cout << sender->toString() << " said: " << v.major << std::endl;
     }
   }
 }

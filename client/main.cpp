@@ -1,9 +1,11 @@
 #include "SFML/Window/Event.hpp"
 #include <SFML/Graphics.hpp>
+#include <SFML/Window.hpp>
 
 #include "SFML/Network/IpAddress.hpp"
 #include <SFML/Network.hpp>
 
+#include <SFML/Window/Window.hpp>
 #include <iostream>
 
 #include "easylogging++.h"
@@ -11,19 +13,40 @@ INITIALIZE_EASYLOGGINGPP
 
 #include "API.h"
 
-int main() {
-  sf::UdpSocket socket;
-  if (socket.bind(sf::Socket::AnyPort) == sf::Socket::Status::Error) {
-    std::cout << "AHH! Failure!" << std::endl;
-    return 0;
-  }
+void test_network() {
+  Connection c(*sf::IpAddress::getLocalAddress(), 8080);
 
   Version v{1, 1, 1};
 
   auto msg = Serialise(v);
-  auto s = socket.send(msg.data(), msg.size() + 1,
-                       *sf::IpAddress::getLocalAddress(), 8080);
-  if (s == sf::Socket::Status::Error) {
+  auto s = c.Send(MessageID::Version, Serialise(v));
+  if (!s) {
     std::cout << "AHH! Failure Sending!" << std::endl;
+  }
+}
+
+void tick() {}
+
+void render(sf::Window &window) {}
+
+int main() {
+
+  test_network();
+
+  sf::Window window(sf::VideoMode({800, 600}), "SSPGE");
+  window.setVerticalSyncEnabled(true);
+
+  // run the program as long as the window is open
+  while (window.isOpen()) {
+    // check all the window's events that were triggered since the last
+    // iteration of the loop
+    while (const std::optional event = window.pollEvent()) {
+      // "close requested" event: we close the window
+      if (event->is<sf::Event::Closed>())
+        window.close();
+    }
+
+    tick();
+    render(window);
   }
 }
