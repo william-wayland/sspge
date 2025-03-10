@@ -2,14 +2,11 @@
 #include <iostream>
 #include <optional>
 
-#include "easylogging++.h"
 #include <SFML/Network.hpp>
 #include <SFML/Network/IpAddress.hpp>
 #include <SFML/Network/Socket.hpp>
 #include <string>
 #include <unordered_map>
-
-INITIALIZE_EASYLOGGINGPP
 
 #include "API.h"
 

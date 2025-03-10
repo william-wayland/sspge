@@ -5,11 +5,15 @@
 #include <SFML/Network/Socket.hpp>
 #include <SFML/Network/UdpSocket.hpp>
 #include <SFML/Window/WindowEnums.hpp>
+#include <cstdlib>
 #include <span>
 #include <type_traits>
 #include <vector>
 
 #include <SFML/Network.hpp>
+
+#include "easylogging++.h"
+INITIALIZE_EASYLOGGINGPP
 
 using byte = uint8_t;
 using bytes = std::vector<byte>;
@@ -50,7 +54,10 @@ struct Version {
 struct Connection {
   Connection(sf::IpAddress address, uint32_t port)
       : socket(), address(address), port(port) {
-    socket.bind(sf::Socket::AnyPort);
+    if (socket.bind(sf::Socket::AnyPort) == sf::Socket::Status::Error) {
+      LOG(ERROR) << "Failure to bind UDP port. Exiting...";
+      exit(-1);
+    }
   }
 
   sf::UdpSocket socket;
