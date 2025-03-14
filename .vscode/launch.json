@@ -7,8 +7,16 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug",
+            "name": "Debug (Windows)",
             "program": "${workspaceFolder}/build/sspge.exe",
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug (MacOS)",
+            "program": "${workspaceFolder}/build/sspge",
             "args": [],
             "cwd": "${workspaceFolder}"
         }

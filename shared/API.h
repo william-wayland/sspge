@@ -15,6 +15,8 @@
 #include "easylogging++.h"
 INITIALIZE_EASYLOGGINGPP
 
+#include "world.h"
+
 using byte = uint8_t;
 using bytes = std::vector<byte>;
 using byte_span = std::span<byte>;
