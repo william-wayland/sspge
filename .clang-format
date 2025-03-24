@@ -7,7 +7,7 @@ BraceWrapping:
   AfterStruct: false
   AfterClass: false
   SplitEmptyFunction: true
-  AfterFunction: true
+  # AfterFunction: true
 
 ConstructorInitializerIndentWidth: 2
 PackConstructorInitializers: NextLineOnly
