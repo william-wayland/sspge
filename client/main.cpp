@@ -2,7 +2,9 @@
 #include <SFML/Graphics.hpp>
 #include <SFML/Graphics/CircleShape.hpp>
 #include <SFML/Graphics/Color.hpp>
+#include <SFML/Graphics/RectangleShape.hpp>
 #include <SFML/Graphics/RenderWindow.hpp>
+#include <SFML/Graphics/Shape.hpp>
 #include <SFML/System/Angle.hpp>
 #include <SFML/System/Clock.hpp>
 #include <SFML/System/Time.hpp>
@@ -131,6 +133,7 @@ struct State {
   uint64_t frame = 0;
   int bounce = 0;
   std::optional<float> energy = std::nullopt;
+  sf::Vector2f center_of_mass;
 } state;
 
 void collide_with_walls(Entity &e) {
@@ -162,7 +165,16 @@ void collide_with_entity(Entity &a, Entity &b) {
   if (!a.collides(b))
     return;
 
-  sf::Vector2f normal = (b.center() - a.center()).normalized();
+  static uint64_t last_collision_frame = state.frame;
+  if (last_collision_frame == state.frame - 1) {
+    std::cout << "Maybe ignore this collision... too soon since last one."
+              << std::endl;
+    return;
+  }
+  last_collision_frame = state.frame;
+
+  const sf::Vector2f normal = (b.center() - a.center()).normalized();
+  const sf::Vector2f tangent = {-normal.y, normal.x};
 
   // move balls apart until they're no longer touching
   for (int i = 0; i < 100; i++) {
@@ -185,23 +197,15 @@ void collide_with_entity(Entity &a, Entity &b) {
   }
 
   if (a.collides(b)) {
-    std::cout << "Entities still are colliding after moving apart."
+    std::cout << "Entities still are colliding after moving apart: "
+              << a.radius() + b.radius() - (a.center() - b.center()).length()
               << std::endl;
   }
-
-  static uint64_t last_collision_frame = state.frame;
-  if (last_collision_frame == state.frame - 1) {
-    std::cout << "Maybe ignore this collision... too soon since last one."
-              << std::endl;
-    return;
-  }
-  last_collision_frame = state.frame;
 
   // inverse total mass
   const float itm = 1.0 / (a.mass() + b.mass());
 
   // the normal/tangent components of the collision.
-  const sf::Vector2f tangent = normal.rotatedBy(sf::degrees(-90));
   const sf::Vector2f van = a.velocity().projectedOnto(normal);
   const sf::Vector2f vbn = b.velocity().projectedOnto(normal);
   const sf::Vector2f vat = a.velocity().projectedOnto(tangent);
@@ -267,16 +271,28 @@ void tick(float delta_time) {
     //           << (*state.energy - current_energy) << std::endl;
   }
 
+  sf::Vector2f mv = {0, 0};
+  float mt = 0;
   for (Entity &e : state.entities) {
-    collide_with_walls(e);
+    // collide_with_walls(e);
     e.tick(delta_time);
+
+    mv += e.mass() * e.center();
+    mt += e.mass();
   }
+
+  state.center_of_mass = mv / mt;
 }
 
 void render(sf::RenderWindow *window) {
   for (auto &e : state.entities) {
     e.draw(window);
   }
+
+  sf::RectangleShape s{{6, 6}};
+  s.setFillColor(sf::Color::White);
+  s.setPosition(state.center_of_mass + sf::Vector2f{3, 3});
+  window->draw(s);
   window->display();
 }
 
@@ -310,11 +326,11 @@ void reset() {
   }
 
   // state.entities.emplace_back(
-  //     sf::Vector2f{150.0f, 200.0f}, sf::Vector2f{0, 0}, 50, 5,
+  //     sf::Vector2f{150.0f, 200.0f}, sf::Vector2f{0, 0}, 50, 50,
   //     sf::Color::Green
   // );
   // state.entities.emplace_back(
-  //     sf::Vector2f{300.0f, 290.0f}, sf::Vector2f{-50, 0}, 50, 5,
+  //     sf::Vector2f{300.0f, 290.0f}, sf::Vector2f{-50, 0}, 50, 50,
   //     sf::Color::Red
   // );
 }
