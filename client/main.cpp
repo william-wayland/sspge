@@ -3,6 +3,7 @@
 #include <SFML/Graphics/CircleShape.hpp>
 #include <SFML/Graphics/Color.hpp>
 #include <SFML/Graphics/RenderWindow.hpp>
+#include <SFML/System/Angle.hpp>
 #include <SFML/System/Clock.hpp>
 #include <SFML/System/Time.hpp>
 #include <SFML/System/Vector2.hpp>
@@ -24,7 +25,7 @@
 #include "API.h"
 #include "world.h"
 
-// Rather than terminal velocuty here, air resistance from size causing drag
+// Rather than terminal velocity here, air resistance from size causing drag
 // static constexpr float DRAG_COEF = 1.0e-8f;
 static constexpr float ELASTICITY = 1.00f;
 
@@ -161,21 +162,7 @@ void collide_with_entity(Entity &a, Entity &b) {
   if (!a.collides(b))
     return;
 
-  static uint64_t last_collision_frame = state.frame;
-  if (last_collision_frame == state.frame - 1) {
-    std::cout << "Maybe ignore this collision... too soon since last one."
-              << std::endl;
-    return;
-  }
-  last_collision_frame = state.frame;
-
-  // assuming perfect inline collision / need to rotate reference frame to
-  // collion's tangent and take x/y calculations seperately
-  float itm = 1.0 / (a.mass() + b.mass());
-  const sf::Vector2f va = a.velocity();
-  const sf::Vector2f vb = b.velocity();
-  a.velocity() = (a.mass() - b.mass()) * itm * va + 2 * b.mass() * itm * vb;
-  b.velocity() = (b.mass() - a.mass()) * itm * vb + 2 * a.mass() * itm * va;
+  sf::Vector2f normal = (b.center() - a.center()).normalized();
 
   // move balls apart until they're no longer touching
   for (int i = 0; i < 100; i++) {
@@ -193,15 +180,38 @@ void collide_with_entity(Entity &a, Entity &b) {
       return;
     }
 
-    sf::Vector2f dir = (b.center() - a.center()).normalized();
-    a.position() -= overlap * dir * sa / (sa + sb);
-    b.position() += overlap * dir * sb / (sa + sb);
+    a.position() -= overlap * normal * sa / (sa + sb);
+    b.position() += overlap * normal * sb / (sa + sb);
   }
 
   if (a.collides(b)) {
     std::cout << "Entities still are colliding after moving apart."
               << std::endl;
   }
+
+  static uint64_t last_collision_frame = state.frame;
+  if (last_collision_frame == state.frame - 1) {
+    std::cout << "Maybe ignore this collision... too soon since last one."
+              << std::endl;
+    return;
+  }
+  last_collision_frame = state.frame;
+
+  // inverse total mass
+  const float itm = 1.0 / (a.mass() + b.mass());
+
+  // the normal/tangent components of the collision.
+  const sf::Vector2f tangent = normal.rotatedBy(sf::degrees(-90));
+  const sf::Vector2f van = a.velocity().projectedOnto(normal);
+  const sf::Vector2f vbn = b.velocity().projectedOnto(normal);
+  const sf::Vector2f vat = a.velocity().projectedOnto(tangent);
+  const sf::Vector2f vbt = b.velocity().projectedOnto(tangent);
+
+  // Derived from conservation of momentum
+  a.velocity() =
+      (a.mass() - b.mass()) * itm * van + 2 * b.mass() * itm * vbn + vat;
+  b.velocity() =
+      (b.mass() - a.mass()) * itm * vbn + 2 * a.mass() * itm * van + vbt;
 }
 
 // returns the potential energy of the two entities
@@ -237,7 +247,7 @@ void combine(std::vector<T> &v, std::function<void(T &, T &)> f) {
 void tick(float delta_time) {
   float energy = 0;
 
-  // kenetic
+  // kinetic
   for (Entity &e : state.entities) {
     energy += e.mass() * e.velocity().lengthSquared() * 0.5;
   }
@@ -246,7 +256,7 @@ void tick(float delta_time) {
     collide_with_entity(a, b);
 
     // Gravitational potential
-    // energy -= gravity(a, b);
+    energy += gravity(a, b);
   });
 
   if (!state.energy) {
@@ -289,22 +299,24 @@ void reset() {
   std::uniform_real_distribution<float> wg(100, WORLD_WIDTH - 100);
   std::uniform_real_distribution<float> hg(100, WORLD_HEIGHT - 100);
   std::uniform_real_distribution<float> sg(5, 20);
-  std::uniform_real_distribution<float> dg(1.0f, 1.0f);
+  std::uniform_real_distribution<float> dg(1.0f, 5.0f);
   std::uniform_int_distribution<int> cg(0, 255);
 
-  // for (int i = 0; i < 10; i++) {
-  //   state.entities.emplace_back(
-  //       sf::Vector2f{wg(e), hg(e)}, sf::Vector2f{0, 0}, sg(e), dg(e),
-  //       sf::Color(cg(e), cg(e), cg(e))
-  //   );
-  // }
+  for (int i = 0; i < 10; i++) {
+    state.entities.emplace_back(
+        sf::Vector2f{wg(e), hg(e)}, sf::Vector2f{0, 0}, sg(e), dg(e),
+        sf::Color(cg(e), cg(e), cg(e))
+    );
+  }
 
-  state.entities.emplace_back(
-      sf::Vector2f{140.0f, 200.0f}, sf::Vector2f{0, 0}, 50, 50, sf::Color::Green
-  );
-  state.entities.emplace_back(
-      sf::Vector2f{330.0f, 290.0f}, sf::Vector2f{-50, 0}, 50, 50, sf::Color::Red
-  );
+  // state.entities.emplace_back(
+  //     sf::Vector2f{150.0f, 200.0f}, sf::Vector2f{0, 0}, 50, 5,
+  //     sf::Color::Green
+  // );
+  // state.entities.emplace_back(
+  //     sf::Vector2f{300.0f, 290.0f}, sf::Vector2f{-50, 0}, 50, 5,
+  //     sf::Color::Red
+  // );
 }
 
 int main() {
