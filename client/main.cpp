@@ -1,3 +1,6 @@
+#include <imgui-SFML.h>
+#include <imgui.h>
+
 #include "SFML/Window/Event.hpp"
 #include <SFML/Graphics.hpp>
 #include <SFML/Graphics/CircleShape.hpp>
@@ -11,11 +14,13 @@
 #include <SFML/System/Vector2.hpp>
 #include <SFML/Window.hpp>
 
-#include "SFML/Network/IpAddress.hpp"
 #include <SFML/Network.hpp>
+#include <SFML/Network/IpAddress.hpp>
 
+#include <SFML/Window/Joystick.hpp>
 #include <SFML/Window/Keyboard.hpp>
 #include <SFML/Window/Window.hpp>
+
 #include <cmath>
 #include <cstdlib>
 #include <functional>
@@ -25,6 +30,7 @@
 #include <vector>
 
 #include "API.h"
+#include "imgui_internal.h"
 #include "world.h"
 
 // Rather than terminal velocity here, air resistance from size causing drag
@@ -134,7 +140,42 @@ struct State {
   int bounce = 0;
   std::optional<float> energy = std::nullopt;
   sf::Vector2f center_of_mass;
+
+  bool enable_gravity = true;
+  float gravity = 1e2;
+
+  bool enable_walls = true;
 } state;
+
+void reset() {
+  state = State{};
+
+  std::random_device r;
+  std::default_random_engine e(r());
+  std::uniform_real_distribution<float> wg(100, WORLD_WIDTH - 100);
+  std::uniform_real_distribution<float> hg(100, WORLD_HEIGHT - 100);
+  std::uniform_real_distribution<float> sg(5, 20);
+  std::uniform_real_distribution<float> dg(1.0f, 5.0f);
+  std::uniform_int_distribution<int> cg(0, 255);
+
+  for (int i = 0; i < 10; i++) {
+    state.entities.emplace_back(
+        sf::Vector2f{wg(e), hg(e)}, sf::Vector2f{0, 0}, sg(e), dg(e),
+        sf::Color(cg(e), cg(e), cg(e))
+    );
+  }
+}
+
+void reset_big() {
+  state = State{};
+
+  state.entities.emplace_back(
+      sf::Vector2f{150.0f, 200.0f}, sf::Vector2f{0, 0}, 50, 50, sf::Color::Green
+  );
+  state.entities.emplace_back(
+      sf::Vector2f{300.0f, 290.0f}, sf::Vector2f{-50, 0}, 50, 50, sf::Color::Red
+  );
+}
 
 void collide_with_walls(Entity &e) {
   const float dist_from_ground = WORLD_HEIGHT - e.position().y - e.diameter();
@@ -220,16 +261,15 @@ void collide_with_entity(Entity &a, Entity &b) {
 
 // returns the potential energy of the two entities
 float gravity(Entity &a, Entity &b) {
-  static constexpr float GRAVITY = 1e2;
   sf::Vector2f dist = a.center() - b.center();
 
-  sf::Vector2f force =
-      GRAVITY * a.mass() * b.mass() * dist.normalized() / dist.lengthSquared();
+  sf::Vector2f force = state.gravity * a.mass() * b.mass() * dist.normalized() /
+                       dist.lengthSquared();
 
   a.push(-force);
   b.push(force);
 
-  return GRAVITY * a.mass() * b.mass() / dist.length();
+  return state.gravity * a.mass() * b.mass() / dist.length();
 }
 
 // Uniquely combines elements in v
@@ -260,7 +300,9 @@ void tick(float delta_time) {
     collide_with_entity(a, b);
 
     // Gravitational potential
-    energy += gravity(a, b);
+    if (state.enable_gravity) {
+      energy += gravity(a, b);
+    }
   });
 
   if (!state.energy) {
@@ -274,7 +316,8 @@ void tick(float delta_time) {
   sf::Vector2f mv = {0, 0};
   float mt = 0;
   for (Entity &e : state.entities) {
-    // collide_with_walls(e);
+    if (state.enable_walls)
+      collide_with_walls(e);
     e.tick(delta_time);
 
     mv += e.mass() * e.center();
@@ -282,6 +325,24 @@ void tick(float delta_time) {
   }
 
   state.center_of_mass = mv / mt;
+
+  ImGui::Begin("Controls");
+  ImGui::Checkbox("Enable Gravity", &state.enable_gravity);
+
+  if (state.enable_gravity) {
+    ImGui::SliderFloat("G (gravity)", &state.gravity, 0.0f, 1e3f);
+    ImGui::Separator();
+  }
+
+  ImGui::Checkbox("Enable Walls", &state.enable_walls);
+
+  if (ImGui::Button("Little Balls")) {
+    reset();
+  }
+  if (ImGui::Button("Big Balls")) {
+    reset_big();
+  }
+  ImGui::End();
 }
 
 void render(sf::RenderWindow *window) {
@@ -293,6 +354,8 @@ void render(sf::RenderWindow *window) {
   s.setFillColor(sf::Color::White);
   s.setPosition(state.center_of_mass + sf::Vector2f{3, 3});
   window->draw(s);
+
+  ImGui::SFML::Render(*window);
   window->display();
 }
 
@@ -307,43 +370,16 @@ void test_network() {
   }
 }
 
-void reset() {
-  state = State{};
-
-  std::random_device r;
-  std::default_random_engine e(r());
-  std::uniform_real_distribution<float> wg(100, WORLD_WIDTH - 100);
-  std::uniform_real_distribution<float> hg(100, WORLD_HEIGHT - 100);
-  std::uniform_real_distribution<float> sg(5, 20);
-  std::uniform_real_distribution<float> dg(1.0f, 5.0f);
-  std::uniform_int_distribution<int> cg(0, 255);
-
-  for (int i = 0; i < 10; i++) {
-    state.entities.emplace_back(
-        sf::Vector2f{wg(e), hg(e)}, sf::Vector2f{0, 0}, sg(e), dg(e),
-        sf::Color(cg(e), cg(e), cg(e))
-    );
-  }
-
-  // state.entities.emplace_back(
-  //     sf::Vector2f{150.0f, 200.0f}, sf::Vector2f{0, 0}, 50, 50,
-  //     sf::Color::Green
-  // );
-  // state.entities.emplace_back(
-  //     sf::Vector2f{300.0f, 290.0f}, sf::Vector2f{-50, 0}, 50, 50,
-  //     sf::Color::Red
-  // );
-}
-
 int main() {
   test_network();
 
   sf::RenderWindow window(sf::VideoMode({800, 600}), "SSPGE");
   // window.setVerticalSyncEnabled(true);
 
-  sf::Clock clock;
-  float delta_time;
+  if (!ImGui::SFML::Init(window))
+    return -1;
 
+  sf::Clock clock{};
   reset();
 
   // run the program as long as the window is open
@@ -351,6 +387,8 @@ int main() {
     // check all the window's events that were triggered since the last
     // iteration of the loop
     while (const std::optional event = window.pollEvent()) {
+      ImGui::SFML::ProcessEvent(window, *event);
+
       // "close requested" event: we close the window
       if (event->is<sf::Event::Closed>()) {
         window.close();
@@ -367,9 +405,13 @@ int main() {
     }
     window.clear();
 
-    delta_time = std::min(clock.restart().asSeconds(), 1.0f / 60.0f);
-    tick(delta_time);
+    auto delta_time = clock.restart();
+    ImGui::SFML::Update(window, delta_time);
+
+    tick(std::min(delta_time.asSeconds(), 1.0f / 60.0f));
     render(&window);
     state.frame += 1;
   }
+
+  ImGui::SFML::Shutdown();
 }

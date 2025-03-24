@@ -16,14 +16,30 @@ project(
   LANGUAGES CXX)
 
 include(FetchContent)
-FetchContent_Declare(SFML
+FetchContent_Declare(sfml
   GIT_REPOSITORY https://github.com/SFML/SFML.git
   GIT_TAG 3.0.0
   GIT_SHALLOW ON
   EXCLUDE_FROM_ALL
   SYSTEM)
+FetchContent_MakeAvailable(sfml)
 
-FetchContent_MakeAvailable(SFML)
+# Dear ImGui
+FetchContent_Declare(
+  imgui
+  URL "https://github.com/ocornut/imgui/archive/v1.91.1.zip"
+)
+FetchContent_MakeAvailable(imgui)
+
+# ImGui-SFML
+FetchContent_Declare(
+  imgui-sfml
+  GIT_REPOSITORY https://github.com/SFML/imgui-sfml.git
+  GIT_TAG        v3.0
+)
+set(IMGUI_DIR ${imgui_SOURCE_DIR})
+set(IMGUI_SFML_FIND_SFML OFF)
+FetchContent_MakeAvailable(imgui-sfml)
 
 set(SHARED shared/easylogging++.cc)
 
@@ -38,3 +54,5 @@ target_include_directories(sspges PRIVATE server shared)
 # even flags, so linking a target that does not exist will not give a configure-time error.
 target_link_libraries(sspge PRIVATE sfml-graphics sfml-window sfml-audio sfml-network)
 target_link_libraries(sspges PRIVATE sfml-network)
+
+target_link_libraries(sspge PUBLIC ImGui-SFML::ImGui-SFML)
