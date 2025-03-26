@@ -33,10 +33,6 @@
 #include "imgui_internal.h"
 #include "world.h"
 
-// Rather than terminal velocity here, air resistance from size causing drag
-// static constexpr float DRAG_COEF = 1.0e-8f;
-static constexpr float ELASTICITY = 1.00f;
-
 class Entity {
 public:
   Entity(const Entity &) = default;
@@ -68,20 +64,12 @@ public:
   void tick(float delta_time) {
     assert(delta_time > 0);
 
-    // Velocity changes by accelleration (here force/mass)
+    // Velocity changes by acceleration (here force/mass)
     m_velocity += (m_force / m_mass) * delta_time;
     m_force = {0, 0};
 
-    // World Gravity
-    // m_velocity.y += WORLD_GRAVITY * delta_time;
-
-    // Drag
-    // m_velocity += -m_velocity * m_velocity.length() * DRAG_COEF *
-    //               (float)m_shape.getLocalBounds().size.x;
-
     // Velocity
     m_position += m_velocity * delta_time;
-    m_shape.setPosition(m_position);
   }
 
   float mass() {
@@ -124,6 +112,10 @@ public:
     return (center() - e.center()).length() < radius() + e.radius();
   }
 
+  sf::CircleShape &shape() {
+    return m_shape;
+  }
+
 private:
   sf::Vector2f m_force;
   sf::Vector2f m_position;
@@ -141,14 +133,25 @@ struct State {
   std::optional<float> energy = std::nullopt;
   sf::Vector2f center_of_mass;
 
+  sf::Vector2f camera = {0.0, 0.0};
+
   bool enable_gravity = true;
   float gravity = 1e2;
 
   bool enable_walls = true;
+
+  float elasticity = 1.0f;
+  float drag = 0.0f;
 } state;
 
-void reset() {
-  state = State{};
+void reset_state() {
+  state.frame = 0;
+  state.energy = std::nullopt;
+  state.entities.clear();
+}
+
+void reset_small() {
+  reset_state();
 
   std::random_device r;
   std::default_random_engine e(r());
@@ -158,7 +161,7 @@ void reset() {
   std::uniform_real_distribution<float> dg(1.0f, 5.0f);
   std::uniform_int_distribution<int> cg(0, 255);
 
-  for (int i = 0; i < 10; i++) {
+  for (int i = 0; i < 100; i++) {
     state.entities.emplace_back(
         sf::Vector2f{wg(e), hg(e)}, sf::Vector2f{0, 0}, sg(e), dg(e),
         sf::Color(cg(e), cg(e), cg(e))
@@ -167,7 +170,7 @@ void reset() {
 }
 
 void reset_big() {
-  state = State{};
+  reset_state();
 
   state.entities.emplace_back(
       sf::Vector2f{150.0f, 200.0f}, sf::Vector2f{0, 0}, 50, 50, sf::Color::Green
@@ -177,27 +180,31 @@ void reset_big() {
   );
 }
 
+void drag_entity(Entity &e) {
+  e.velocity() *= 1 - state.drag;
+}
+
 void collide_with_walls(Entity &e) {
   const float dist_from_ground = WORLD_HEIGHT - e.position().y - e.diameter();
   if (dist_from_ground <= 0) {
-    e.velocity().y *= -1 * ELASTICITY;
+    e.velocity().y *= -1 * state.elasticity;
     e.position().y = WORLD_HEIGHT - e.diameter();
   }
 
   if (e.position().y <= 0) {
-    e.velocity().y *= -1 * ELASTICITY;
+    e.velocity().y *= -1 * state.elasticity;
     e.position().y = 0;
   }
 
   if (e.position().x <= 0) {
-    e.velocity().x *= -1 * ELASTICITY;
+    e.velocity().x *= -1 * state.elasticity;
     e.position().x = 0;
     state.bounce += 1;
   }
 
   const float dist_from_right = WORLD_WIDTH - e.position().x - e.diameter();
   if (dist_from_right <= 0) {
-    e.velocity().x *= -1 * ELASTICITY;
+    e.velocity().x *= -1 * state.elasticity;
     e.position().x = WORLD_WIDTH - e.diameter();
   }
 }
@@ -208,8 +215,6 @@ void collide_with_entity(Entity &a, Entity &b) {
 
   static uint64_t last_collision_frame = state.frame;
   if (last_collision_frame == state.frame - 1) {
-    std::cout << "Maybe ignore this collision... too soon since last one."
-              << std::endl;
     return;
   }
   last_collision_frame = state.frame;
@@ -228,19 +233,12 @@ void collide_with_entity(Entity &a, Entity &b) {
     float sa = a.velocity().length();
     float sb = b.velocity().length();
     if (sa == 0 && sb == 0) {
-      std::cout << "Velocity is zero... no way to resolve overlap for now."
-                << std::endl;
-      return;
+      a.position() -= overlap * normal * 0.5f;
+      b.position() += overlap * normal * 0.5f;
+    } else {
+      a.position() -= overlap * normal * sa / (sa + sb);
+      b.position() += overlap * normal * sb / (sa + sb);
     }
-
-    a.position() -= overlap * normal * sa / (sa + sb);
-    b.position() += overlap * normal * sb / (sa + sb);
-  }
-
-  if (a.collides(b)) {
-    std::cout << "Entities still are colliding after moving apart: "
-              << a.radius() + b.radius() - (a.center() - b.center()).length()
-              << std::endl;
   }
 
   // inverse total mass
@@ -253,10 +251,12 @@ void collide_with_entity(Entity &a, Entity &b) {
   const sf::Vector2f vbt = b.velocity().projectedOnto(tangent);
 
   // Derived from conservation of momentum
-  a.velocity() =
-      (a.mass() - b.mass()) * itm * van + 2 * b.mass() * itm * vbn + vat;
-  b.velocity() =
-      (b.mass() - a.mass()) * itm * vbn + 2 * a.mass() * itm * van + vbt;
+  a.velocity() = ((a.mass() - b.mass()) * itm * van + 2 * b.mass() * itm * vbn
+                 ) * state.elasticity +
+                 vat;
+  b.velocity() = ((b.mass() - a.mass()) * itm * vbn + 2 * a.mass() * itm * van
+                 ) * state.elasticity +
+                 vbt;
 }
 
 // returns the potential energy of the two entities
@@ -308,9 +308,6 @@ void tick(float delta_time) {
   if (!state.energy) {
     state.energy = energy;
     std::cout << "Total Energy of System: " << energy << std::endl;
-  } else if (*state.energy != energy) {
-    // std::cout << "Energy of System Changed: "
-    //           << (*state.energy - current_energy) << std::endl;
   }
 
   sf::Vector2f mv = {0, 0};
@@ -318,26 +315,37 @@ void tick(float delta_time) {
   for (Entity &e : state.entities) {
     if (state.enable_walls)
       collide_with_walls(e);
+
+    drag_entity(e);
     e.tick(delta_time);
 
     mv += e.mass() * e.center();
     mt += e.mass();
   }
 
-  state.center_of_mass = mv / mt;
+  if (mt != 0) {
+    state.center_of_mass = mv / mt;
+  }
 
   ImGui::Begin("Controls");
+
+  ImGui::SliderFloat("Drag", &state.drag, -1.0f, 1.0f);
+  ImGui::SliderFloat("Elasticity", &state.elasticity, 0.0f, 2.0f);
+
+  ImGui::SliderFloat("Camera (x)", &state.camera.x, -1000.0f, 1000.0f);
+  ImGui::SliderFloat("Camera (y)", &state.camera.y, -1000.0f, 1000.0f);
+
   ImGui::Checkbox("Enable Gravity", &state.enable_gravity);
 
   if (state.enable_gravity) {
-    ImGui::SliderFloat("G (gravity)", &state.gravity, 0.0f, 1e3f);
+    ImGui::SliderFloat("Gravity", &state.gravity, 0.0f, 1e3f);
     ImGui::Separator();
   }
 
   ImGui::Checkbox("Enable Walls", &state.enable_walls);
 
   if (ImGui::Button("Little Balls")) {
-    reset();
+    reset_small();
   }
   if (ImGui::Button("Big Balls")) {
     reset_big();
@@ -347,12 +355,13 @@ void tick(float delta_time) {
 
 void render(sf::RenderWindow *window) {
   for (auto &e : state.entities) {
+    e.shape().setPosition(e.position() + state.camera);
     e.draw(window);
   }
 
   sf::RectangleShape s{{6, 6}};
   s.setFillColor(sf::Color::White);
-  s.setPosition(state.center_of_mass + sf::Vector2f{3, 3});
+  s.setPosition(state.center_of_mass - sf::Vector2f{3, 3});
   window->draw(s);
 
   ImGui::SFML::Render(*window);
@@ -373,14 +382,14 @@ void test_network() {
 int main() {
   test_network();
 
-  sf::RenderWindow window(sf::VideoMode({800, 600}), "SSPGE");
+  sf::RenderWindow window(sf::VideoMode({WORLD_WIDTH, WORLD_HEIGHT}), "SSPGE");
   // window.setVerticalSyncEnabled(true);
 
   if (!ImGui::SFML::Init(window))
     return -1;
 
   sf::Clock clock{};
-  reset();
+  reset_state();
 
   // run the program as long as the window is open
   while (window.isOpen()) {
@@ -399,7 +408,19 @@ int main() {
           window.close();
         }
         if (sf::Keyboard::isKeyPressed(sf::Keyboard::Key::R)) {
-          reset();
+          reset_state();
+        }
+        if (sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Right)) {
+          state.camera.x += 1.0f;
+        }
+        if (sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Left)) {
+          state.camera.x -= 1.0f;
+        }
+        if (sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Down)) {
+          state.camera.y += 1.0f;
+        }
+        if (sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Up)) {
+          state.camera.y -= 1.0f;
         }
       }
     }
