@@ -44,6 +44,7 @@ public:
     : m_position(position),
       m_velocity(velocity),
       m_mass(sf::priv::pi * size * size * density),
+      m_size(size),
       m_shape(size),
       m_id([] {
         static int id = 0;
@@ -112,6 +113,10 @@ public:
     return (center() - e.center()).length() < radius() + e.radius();
   }
 
+  float size() {
+    return m_size;
+  }
+
   sf::CircleShape &shape() {
     return m_shape;
   }
@@ -121,6 +126,7 @@ private:
   sf::Vector2f m_position;
   sf::Vector2f m_velocity;
   float m_mass;
+  float m_size; // essentially the radius
   sf::CircleShape m_shape;
 
   const int m_id;
@@ -133,7 +139,8 @@ struct State {
   std::optional<float> energy = std::nullopt;
   sf::Vector2f center_of_mass;
 
-  sf::Vector2f camera = {0.0, 0.0};
+  sf::Vector2f camera_position = {0.0, 0.0};
+  float camera_zoom = 1.0f;
 
   bool enable_gravity = true;
   float gravity = 1e2;
@@ -223,22 +230,16 @@ void collide_with_entity(Entity &a, Entity &b) {
   const sf::Vector2f tangent = {-normal.y, normal.x};
 
   // move balls apart until they're no longer touching
-  for (int i = 0; i < 100; i++) {
-    float overlap =
-        a.radius() + b.radius() - (a.center() - b.center()).length();
-    if (overlap <= 0) {
-      break;
-    }
+  float overlap = a.radius() + b.radius() - (a.center() - b.center()).length();
 
-    float sa = a.velocity().length();
-    float sb = b.velocity().length();
-    if (sa == 0 && sb == 0) {
-      a.position() -= overlap * normal * 0.5f;
-      b.position() += overlap * normal * 0.5f;
-    } else {
-      a.position() -= overlap * normal * sa / (sa + sb);
-      b.position() += overlap * normal * sb / (sa + sb);
-    }
+  float sa = a.velocity().length();
+  float sb = b.velocity().length();
+  if (sa == 0 && sb == 0) {
+    a.position() -= overlap * normal * 0.5f;
+    b.position() += overlap * normal * 0.5f;
+  } else {
+    a.position() -= overlap * normal * sa / (sa + sb);
+    b.position() += overlap * normal * sb / (sa + sb);
   }
 
   // inverse total mass
@@ -332,8 +333,9 @@ void tick(float delta_time) {
   ImGui::SliderFloat("Drag", &state.drag, -1.0f, 1.0f);
   ImGui::SliderFloat("Elasticity", &state.elasticity, 0.0f, 2.0f);
 
-  ImGui::SliderFloat("Camera (x)", &state.camera.x, -1000.0f, 1000.0f);
-  ImGui::SliderFloat("Camera (y)", &state.camera.y, -1000.0f, 1000.0f);
+  ImGui::SliderFloat("Camera (x)", &state.camera_position.x, -1000.0f, 1000.0f);
+  ImGui::SliderFloat("Camera (y)", &state.camera_position.y, -1000.0f, 1000.0f);
+  ImGui::SliderFloat("Camera (zoom)", &state.camera_zoom, 0.1f, 10.0f);
 
   ImGui::Checkbox("Enable Gravity", &state.enable_gravity);
 
@@ -355,13 +357,19 @@ void tick(float delta_time) {
 
 void render(sf::RenderWindow *window) {
   for (auto &e : state.entities) {
-    e.shape().setPosition(e.position() + state.camera);
+    e.shape().setPosition(
+        e.position() * 1.0f / state.camera_zoom +
+        state.camera_position * 1.0f / state.camera_zoom
+    );
+    e.shape().setRadius(e.size() * state.camera_zoom);
     e.draw(window);
   }
 
   sf::RectangleShape s{{6, 6}};
   s.setFillColor(sf::Color::White);
-  s.setPosition(state.center_of_mass - sf::Vector2f{3, 3});
+  s.setPosition(
+      state.center_of_mass + state.camera_position - sf::Vector2f{3, 3}
+  );
   window->draw(s);
 
   ImGui::SFML::Render(*window);
@@ -411,16 +419,16 @@ int main() {
           reset_state();
         }
         if (sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Right)) {
-          state.camera.x += 1.0f;
+          state.camera_position.x += 1.0f;
         }
         if (sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Left)) {
-          state.camera.x -= 1.0f;
+          state.camera_position.x -= 1.0f;
         }
         if (sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Down)) {
-          state.camera.y += 1.0f;
+          state.camera_position.y += 1.0f;
         }
         if (sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Up)) {
-          state.camera.y -= 1.0f;
+          state.camera_position.y -= 1.0f;
         }
       }
     }
