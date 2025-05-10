@@ -21,16 +21,12 @@
 #include <SFML/Window/Keyboard.hpp>
 #include <SFML/Window/Window.hpp>
 
-#include <cmath>
-#include <cstdlib>
 #include <functional>
 #include <iostream>
-#include <limits>
 #include <random>
 #include <vector>
 
 #include "API.h"
-#include "imgui_internal.h"
 #include "world.h"
 
 class Entity {
@@ -140,7 +136,6 @@ struct State {
   sf::Vector2f center_of_mass;
 
   sf::Vector2f camera_position = {0.0, 0.0};
-  float camera_zoom = 1.0f;
 
   bool enable_gravity = true;
   float gravity = 1e2;
@@ -187,6 +182,19 @@ void reset_big() {
   );
 }
 
+void reset_orbit() {
+  reset_state();
+
+  state.entities.emplace_back(
+      sf::Vector2f{450.0f, 450.0f}, sf::Vector2f{0, 0}, 50, 500,
+      sf::Color::Green
+  );
+  state.entities.emplace_back(
+      sf::Vector2f{250.0f, 450.0f}, sf::Vector2f{0, 1600}, 50, 0.05f,
+      sf::Color::Red
+  );
+}
+
 void drag_entity(Entity &e) {
   e.velocity() *= 1 - state.drag;
 }
@@ -219,12 +227,6 @@ void collide_with_walls(Entity &e) {
 void collide_with_entity(Entity &a, Entity &b) {
   if (!a.collides(b))
     return;
-
-  static uint64_t last_collision_frame = state.frame;
-  if (last_collision_frame == state.frame - 1) {
-    return;
-  }
-  last_collision_frame = state.frame;
 
   const sf::Vector2f normal = (b.center() - a.center()).normalized();
   const sf::Vector2f tangent = {-normal.y, normal.x};
@@ -335,7 +337,6 @@ void tick(float delta_time) {
 
   ImGui::SliderFloat("Camera (x)", &state.camera_position.x, -1000.0f, 1000.0f);
   ImGui::SliderFloat("Camera (y)", &state.camera_position.y, -1000.0f, 1000.0f);
-  ImGui::SliderFloat("Camera (zoom)", &state.camera_zoom, 0.1f, 10.0f);
 
   ImGui::Checkbox("Enable Gravity", &state.enable_gravity);
 
@@ -352,16 +353,16 @@ void tick(float delta_time) {
   if (ImGui::Button("Big Balls")) {
     reset_big();
   }
+
+  if (ImGui::Button("Orbit")) {
+    reset_orbit();
+  }
   ImGui::End();
 }
 
 void render(sf::RenderWindow *window) {
   for (auto &e : state.entities) {
-    e.shape().setPosition(
-        e.position() * 1.0f / state.camera_zoom +
-        state.camera_position * 1.0f / state.camera_zoom
-    );
-    e.shape().setRadius(e.size() * state.camera_zoom);
+    e.shape().setPosition(e.position() + state.camera_position);
     e.draw(window);
   }
 
@@ -376,20 +377,7 @@ void render(sf::RenderWindow *window) {
   window->display();
 }
 
-void test_network() {
-  Connection c(*sf::IpAddress::getLocalAddress(), 8080);
-
-  Version v{1, 1, 1};
-
-  auto s = c.Send(MessageID::Version, Serialise(v));
-  if (!s) {
-    std::cout << "AHH! Failure Sending!" << std::endl;
-  }
-}
-
 int main() {
-  test_network();
-
   sf::RenderWindow window(sf::VideoMode({WORLD_WIDTH, WORLD_HEIGHT}), "SSPGE");
   // window.setVerticalSyncEnabled(true);
 
