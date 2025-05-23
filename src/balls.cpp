@@ -1,7 +1,6 @@
 #include <imgui-SFML.h>
 #include <imgui.h>
 
-#include "SFML/Window/Event.hpp"
 #include <SFML/Graphics.hpp>
 #include <SFML/Graphics/CircleShape.hpp>
 #include <SFML/Graphics/Color.hpp>
@@ -13,6 +12,7 @@
 #include <SFML/System/Time.hpp>
 #include <SFML/System/Vector2.hpp>
 #include <SFML/Window.hpp>
+#include <SFML/Window/Event.hpp>
 
 #include <SFML/Network.hpp>
 #include <SFML/Network/IpAddress.hpp>
@@ -26,106 +26,11 @@
 #include <random>
 #include <vector>
 
+#include <easylogging++.h>
+INITIALIZE_EASYLOGGINGPP
+
+#include "entity.h"
 #include "world.h"
-
-class Entity {
-public:
-  Entity(const Entity &) = default;
-  Entity(Entity &&) = default;
-  Entity(
-      sf::Vector2f position, sf::Vector2f velocity, float size, float density,
-      sf::Color color
-  )
-    : m_position(position),
-      m_velocity(velocity),
-      m_mass(sf::priv::pi * size * size * density),
-      m_size(size),
-      m_shape(size),
-      m_id([] {
-        static int id = 0;
-        return id++;
-      }()) {
-    m_shape.setFillColor(color);
-  }
-
-  // stores the forces until tick
-  void push(sf::Vector2f force) {
-    m_force += force;
-  }
-
-  void draw(sf::RenderWindow *window) {
-    window->draw(m_shape);
-  }
-
-  void tick(float delta_time) {
-    assert(delta_time > 0);
-
-    // Velocity changes by acceleration (here force/mass)
-    m_velocity += (m_force / m_mass) * delta_time;
-    m_force = {0, 0};
-
-    // Velocity
-    m_position += m_velocity * delta_time;
-  }
-
-  float mass() {
-    return m_mass;
-  }
-
-  sf::Vector2f &position() {
-    return m_position;
-  }
-
-  sf::Vector2f center() const {
-    return m_position + (m_shape.getLocalBounds().size / 2.0f);
-  }
-
-  void set_center(sf::Vector2f center) {
-    m_position = center - (m_shape.getLocalBounds().size / 2.0f);
-  }
-
-  sf::Vector2f &velocity() {
-    return m_velocity;
-  }
-
-  void set_velocity(sf::Vector2f velocity) {
-    m_velocity = velocity;
-  }
-
-  float radius() const {
-    return m_shape.getRadius();
-  }
-
-  float diameter() {
-    return 2 * m_shape.getRadius();
-  }
-
-  int id() {
-    return m_id;
-  }
-
-  bool collides(const Entity &e) {
-    return (center() - e.center()).length() < radius() + e.radius();
-  }
-
-  float size() {
-    return m_size;
-  }
-
-  sf::CircleShape &shape() {
-    return m_shape;
-  }
-
-private:
-  sf::Vector2f m_force;
-  sf::Vector2f m_position;
-  sf::Vector2f m_velocity;
-  float m_mass;
-  float m_size; // essentially the radius
-  sf::CircleShape m_shape;
-
-  const int m_id;
-};
 
 struct State {
   std::vector<Entity> entities;
@@ -361,8 +266,7 @@ void tick(float delta_time) {
 
 void render(sf::RenderWindow *window) {
   for (auto &e : state.entities) {
-    e.shape().setPosition(e.position() + state.camera_position);
-    e.draw(window);
+    e.draw(window, state.camera_position);
   }
 
   sf::RectangleShape s{{6, 6}};
@@ -377,7 +281,7 @@ void render(sf::RenderWindow *window) {
 }
 
 int main() {
-  sf::RenderWindow window(sf::VideoMode({WORLD_WIDTH, WORLD_HEIGHT}), "SSPGE");
+  sf::RenderWindow window(sf::VideoMode({WORLD_WIDTH, WORLD_HEIGHT}), "Balls");
   // window.setVerticalSyncEnabled(true);
 
   if (!ImGui::SFML::Init(window))
@@ -398,23 +302,23 @@ int main() {
         window.close();
       }
 
-      if (event->is<sf::Event::KeyPressed>()) {
-        if (sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Escape)) {
+      if (auto e = event->getIf<sf::Event::KeyPressed>()) {
+        if (e->code == sf::Keyboard::Key::Escape) {
           window.close();
         }
-        if (sf::Keyboard::isKeyPressed(sf::Keyboard::Key::R)) {
+        if (e->code == sf::Keyboard::Key::R) {
           reset_state();
         }
-        if (sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Right)) {
+        if (e->code == sf::Keyboard::Key::Right) {
           state.camera_position.x += 1.0f;
         }
-        if (sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Left)) {
+        if (e->code == sf::Keyboard::Key::Left) {
           state.camera_position.x -= 1.0f;
         }
-        if (sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Down)) {
+        if (e->code == sf::Keyboard::Key::Down) {
           state.camera_position.y += 1.0f;
         }
-        if (sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Up)) {
+        if (e->code == sf::Keyboard::Key::Up) {
           state.camera_position.y -= 1.0f;
         }
       }
