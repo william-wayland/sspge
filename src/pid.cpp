@@ -1,5 +1,6 @@
 #include <SFML/Graphics/Color.hpp>
 #include <SFML/System/Vector2.hpp>
+#include <SFML/Window/Event.hpp>
 #include <SFML/Window/Mouse.hpp>
 #include <imgui-SFML.h>
 #include <imgui.h>
@@ -18,17 +19,39 @@ INITIALIZE_EASYLOGGINGPP
 struct State {
   sf::Vector2f mouse;
   std::unique_ptr<Entity> ball;
+  sf::Vector2f integral = {0, 0};
+  sf::Vector2f prev_error = {0, 0};
+
+  float p_term = 1.0f;
+  float i_term = 1.0f;
+  float d_term = 0.5f;
+
 } state;
 
 void tick(float delta) {
-  state.ball->set_center(state.mouse);
-  // state.mouse->tick(delta);
+  auto error = state.mouse - state.ball->center();
 
-  ImGui::Begin("Controls");
-  ImGui::End();
+  auto proportional = state.p_term * error;
+
+  state.integral += delta * error;
+  auto integral = state.i_term * state.integral;
+
+  auto derivitive = state.d_term * (error - state.prev_error) / delta;
+  state.prev_error = error;
+
+  state.ball->set_center(
+      state.ball->center() + (proportional + integral + derivitive) * delta
+  );
+  // state.mouse->tick(delta);
 }
 
 void render(sf::RenderWindow *window) {
+  ImGui::Begin("Controls");
+  ImGui::SliderFloat("P", &state.p_term, -1.0f, 1.0f);
+  ImGui::SliderFloat("I", &state.i_term, -1.0f, 1.0f);
+  ImGui::SliderFloat("D", &state.d_term, -1.0f, 1.0f);
+  ImGui::End();
+
   state.ball->draw(window);
   ImGui::SFML::Render(*window);
 
@@ -45,8 +68,10 @@ int main() {
   state.ball = std::make_unique<Entity>(
       sf::Vector2f{0, 0}, sf::Vector2f{0, 0}, 20, 1, sf::Color::Red
   );
+  state.ball->set_center({(float)WORLD_WIDTH / 2, (float)WORLD_HEIGHT / 2});
 
   sf::Clock clock{};
+  bool run = false;
 
   // run the program as long as the window is open
   while (window.isOpen()) {
@@ -72,13 +97,18 @@ int main() {
         };
         std::cout << state.mouse.x << std::endl;
       }
+      if (auto e = event->getIf<sf::Event::MouseButtonPressed>()) {
+        if (e->button == sf::Mouse::Button::Right)
+          run = !run;
+      }
     }
     window.clear();
 
     auto delta_time = clock.restart();
     ImGui::SFML::Update(window, delta_time);
 
-    tick(std::min(delta_time.asSeconds(), 1.0f / 60.0f));
+    if (run)
+      tick(std::min(delta_time.asSeconds(), 1.0f / 60.0f));
     render(&window);
   }
 
