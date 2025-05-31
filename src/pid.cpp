@@ -16,40 +16,86 @@ INITIALIZE_EASYLOGGINGPP
 #include "entity.h"
 #include "world.h"
 
+using Vector = sf::Vector2<double>;
+
+template <typename T> class PID {
+public:
+  PID(T initial, double p = 1.0f, double i = 0.0f, double d = 0.0f)
+    : p(p), i(i), d(d), m_point(initial), m_integral(), m_previous_error() {
+  }
+
+  T update(T setpoint, double dt) {
+    const auto error = setpoint - m_point;
+    m_integral += error;
+
+    m_point += (p * error + i * m_integral * dt +
+                d * (error - m_previous_error) / dt) /
+               scale;
+    m_previous_error = error;
+    return m_point;
+  }
+
+  T point() const {
+    return m_point;
+  }
+
+  void set_point(T state) {
+    m_point = state;
+  }
+
+  T integral() const {
+    return m_integral;
+  }
+
+  double p = 1.0f;
+  double i = 0.0f;
+  double d = 0.0f;
+  double scale = 100000.0f;
+
+private:
+  T m_point;
+  T m_integral;
+  T m_previous_error;
+};
+
 struct State {
-  sf::Vector2f mouse;
+  Vector mouse;
   std::unique_ptr<Entity> ball;
-  sf::Vector2f integral = {0, 0};
-  sf::Vector2f prev_error = {0, 0};
+  PID<Vector> pid;
 
-  float p_term = 1.0f;
-  float i_term = 1.0f;
-  float d_term = 0.5f;
+  float down_force = 1.0f;
 
-} state;
+} state{{0.0f, 0.0f}, nullptr, {{0.0f, 0.0f}}};
 
 void tick(float delta) {
-  auto error = state.mouse - state.ball->center();
 
-  auto proportional = state.p_term * error;
+  auto p = state.pid.update(state.mouse, delta);
+  state.ball->set_center({static_cast<float>(p.x), static_cast<float>(p.y)});
 
-  state.integral += delta * error;
-  auto integral = state.i_term * state.integral;
-
-  auto derivitive = state.d_term * (error - state.prev_error) / delta;
-  state.prev_error = error;
-
-  state.ball->set_center(
-      state.ball->center() + (proportional + integral + derivitive) * delta
-  );
-  // state.mouse->tick(delta);
+  state.ball->push({0.0f, state.down_force * 1000.0f});
+  state.ball->tick(delta);
 }
 
 void render(sf::RenderWindow *window) {
+  const double min = 0.0;
+  const double max_pi = 100.0;
+  const double max_d = 30.0;
+
   ImGui::Begin("Controls");
-  ImGui::SliderFloat("P", &state.p_term, -1.0f, 1.0f);
-  ImGui::SliderFloat("I", &state.i_term, -1.0f, 1.0f);
-  ImGui::SliderFloat("D", &state.d_term, -1.0f, 1.0f);
+  ImGui::SliderScalar("P", ImGuiDataType_Double, &state.pid.p, &min, &max_pi);
+  ImGui::SliderScalar("I", ImGuiDataType_Double, &state.pid.i, &min, &max_pi);
+  ImGui::SliderScalar("D", ImGuiDataType_Double, &state.pid.d, &min, &max_d);
+
+  ImGui::SliderFloat("Down Force", &state.down_force, 0.0f, 100.0f);
+
+  ImGui::Text(
+      "Ball Position: %f,%f", state.ball->center().x, state.ball->center().y
+  );
+  ImGui::Text("Mouse Position: %f,%f", state.mouse.x, state.mouse.y);
+  ImGui::Text(
+      "Integral: %f,%f", state.pid.integral().x, state.pid.integral().y
+  );
+  // ImGui::Text("Integral: %f,%f", state.integral.x, state.integral.y);
   ImGui::End();
 
   state.ball->draw(window);
@@ -72,11 +118,9 @@ int main() {
 
   sf::Clock clock{};
   bool run = false;
+  bool step = false;
 
-  // run the program as long as the window is open
   while (window.isOpen()) {
-    // check all the window's events that were triggered since the last
-    // iteration of the loop
     while (const std::optional event = window.pollEvent()) {
       ImGui::SFML::ProcessEvent(window, *event);
 
@@ -85,9 +129,12 @@ int main() {
         window.close();
       }
 
-      if (event->is<sf::Event::KeyPressed>()) {
-        if (sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Escape)) {
+      if (auto e = event->getIf<sf::Event::KeyPressed>()) {
+        if (e->code == sf::Keyboard::Key::Escape) {
           window.close();
+        }
+        if (e->code == sf::Keyboard::Key::S) {
+          step = true;
         }
       }
 
@@ -95,7 +142,6 @@ int main() {
         state.mouse = {
             static_cast<float>(e->position.x), static_cast<float>(e->position.y)
         };
-        std::cout << state.mouse.x << std::endl;
       }
       if (auto e = event->getIf<sf::Event::MouseButtonPressed>()) {
         if (e->button == sf::Mouse::Button::Right)
@@ -107,8 +153,10 @@ int main() {
     auto delta_time = clock.restart();
     ImGui::SFML::Update(window, delta_time);
 
-    if (run)
+    if (run || step)
       tick(std::min(delta_time.asSeconds(), 1.0f / 60.0f));
+
+    step = false;
     render(&window);
   }
 
