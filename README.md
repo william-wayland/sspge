@@ -2,7 +2,7 @@
 
 ## Balls
 
-It (somewhat) accurately simulates multi-body gravity equations. Some of the more interesting parts is the collision-energy loss mitigation strategies I've implemented. I did no research on this topic; everything here is of my own design.
+It (somewhat) accurately simulates multi-body gravity equations. Some of the more interesting parts are the collision-energy loss mitigation strategies I've implemented. I did no research on this topic; everything here is of my own design.
 
 I validated my approach by calculating the center-of-mass and total energy of the system (kinetic + potential); the center-of-mass does remain stationary - the system seems to be symmetric - but the system is slightly lossy energy-wise unfortunately.
 
